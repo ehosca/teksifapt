@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OneDrive Excel Data Reader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .error {
+            color: red;
+            background: #ffe6e6;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            background: #e6ffe6;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .method {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>OneDrive Excel Data Reader</h1>
+    
+    <div class="instructions">
+        <h3>Setup Instructions:</h3>
+        <ol>
+            <li>Open your Excel file in OneDrive</li>
+            <li>Click "Share" and set permissions to "Anyone with the link can view"</li>
+            <li>Copy the share link</li>
+            <li>Paste it below and click "Load Data"</li>
+        </ol>
+    </div>
+
+    <div class="method">
+        <h2>Method 1: OneDrive Direct Link (CSV Export)</h2>
+        <input type="text" id="onedriveUrl" placeholder="https://1drv.ms/x/c/7d8031eb3b45471a/ERB3xGbycV9Hon3irlzUU9wB7qMpODfvWGUhxkVdoczbJA">
+        <button onclick="loadFromOneDriveCSV()">Load Data as CSV</button>
+        <div id="csv-result"></div>
+    </div>
+
+    <div class="method">
+        <h2>Method 2: OneDrive Excel Binary</h2>
+        <input type="text" id="onedriveExcelUrl" placeholder="Paste your OneDrive Excel share link here">  
+        <button onclick="loadFromOneDriveExcel()">Load Excel Data</button>
+        <div id="excel-result"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        // Method 1: Load from OneDrive as CSV
+        async function loadFromOneDriveCSV() {
+            const url = document.getElementById('onedriveUrl').value;
+            const resultDiv = document.getElementById('csv-result');
+            
+            if (!url) {
+                resultDiv.innerHTML = '<div class="error">Please enter a OneDrive URL</div>';
+                return;
+            }
+            
+            try {
+                resultDiv.innerHTML = '<div>Loading data...</div>';
+                
+                // Convert OneDrive share link to CSV download
+                let csvUrl = convertToCsvUrl(url);
+                
+                const response = await fetch(csvUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/csv,text/plain,*/*'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const csvText = await response.text();
+                const data = parseCSV(csvText);
+                displayData(data, resultDiv, 'OneDrive CSV Data');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error loading CSV data: ${error.message}</div>`;
+                console.error('CSV Load Error:', error);
+            }
+        }
+        
+        // Method 2: Load from OneDrive as Excel binary
+        async function loadFromOneDriveExcel() {
+            const url = document.getElementById('onedriveExcelUrl').value;
+            const resultDiv = document.getElementById('excel-result');
+            
+            if (!url) {
+                resultDiv.innerHTML = '<div class="error">Please enter a OneDrive URL</div>';
+                return;
+            }
+            
+            try {
+                resultDiv.innerHTML = '<div>Loading Excel data...</div>';
+                
+                // Convert OneDrive share link to direct download
+                let excelUrl = convertToExcelUrl(url);
+                
+                const response = await fetch(excelUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(new Uint8Array(arrayBuffer), {type: 'array'});
+                
+                // Get first worksheet
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // Convert to JSON
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                
+                displayData(jsonData, resultDiv, `Excel Data from ${firstSheetName}`);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error loading Excel data: ${error.message}</div>`;
+                console.error('Excel Load Error:', error);
+            }
+        }
+        
+        // Convert OneDrive share URL to CSV download URL
+        function convertToCsvUrl(shareUrl) {
+            // For OneDrive URLs like https://1drv.ms/x/s!...
+            if (shareUrl.includes('1drv.ms')) {
+                return shareUrl.replace('/view.aspx', '/download.aspx') + '&download=1';
+            }
+            
+            // For full OneDrive URLs
+            if (shareUrl.includes('onedrive.live.com')) {
+                return shareUrl.replace('view.aspx', 'download.aspx') + '&download=1';
+            }
+            
+            // Try appending download parameter
+            const separator = shareUrl.includes('?') ? '&' : '?';
+            return shareUrl + separator + 'download=1';
+        }
+        
+        // Convert OneDrive share URL to Excel download URL
+        function convertToExcelUrl(shareUrl) {
+            // Similar conversion but for Excel binary
+            if (shareUrl.includes('1drv.ms')) {
+                return shareUrl.replace('/view.aspx', '/download.aspx') + '&download=1';
+            }
+            
+            if (shareUrl.includes('onedrive.live.com')) {
+                return shareUrl.replace('view.aspx', 'download.aspx') + '&download=1';  
+            }
+            
+            const separator = shareUrl.includes('?') ? '&' : '?';
+            return shareUrl + separator + 'download=1';
+        }
+        
+        // Parse CSV text into JSON
+        function parseCSV(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                data.push(row);
+            }
+            
+            return data;
+        }
+        
+        // Display data from first 2 columns
+        function displayData(data, container, title) {
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="error">No data found</div>';
+                return;
+            }
+            
+            const keys = Object.keys(data[0]);
+            const firstTwoColumns = keys.slice(0, 2);
+            
+            let html = `<div class="success">Successfully loaded ${data.length} rows from ${title}</div>`;
+            html += `<p><strong>Showing columns:</strong> ${firstTwoColumns.join(', ')}</p>`;
+            html += `<table class="data-table">`;
+            html += `<thead><tr>`;
+            
+            firstTwoColumns.forEach(key => {
+                html += `<th>${key}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+            
+            // Display all rows (you can limit this if needed)
+            data.forEach(row => {
+                html += `<tr>`;
+                firstTwoColumns.forEach(key => {
+                    html += `<td>${row[key] || ''}</td>`;
+                });
+                html += `</tr>`;
+            });
+            
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+            
+            // Make data available for further use
+            window.oneDriveData = data;
+            window.firstTwoColumns = firstTwoColumns;
+            
+            console.log('Data loaded:', data);
+            console.log('First two columns:', firstTwoColumns);
+        }
+    </script>
+</body>
+</html>
