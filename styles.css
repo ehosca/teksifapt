@@ -133,7 +133,7 @@ body {
 
 .content-header {
   background-color: white;
-  padding: 25px 30px;
+  padding: 0px;
   border-bottom: 2px solid #D5DBDB;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
